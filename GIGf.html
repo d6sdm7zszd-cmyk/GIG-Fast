@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<!-- PWA / instalable en iOS -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="GigFast">
+<link rel="manifest" href="manifest.webmanifest">
+<title>GigFast — evalúa la oferta en segundos</title>
+<!-- Única dependencia externa: OCR en el dispositivo (no sube imágenes a ningún servidor) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#131a22; --panel2:#1b242e; --line:#243140;
+    --txt:#e5edf5; --dim:#8aa0b2; --blue:#38bdf8;
+    --ok:#4ade80; --warn:#fbbf24; --bad:#f87171;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  body{max-width:480px;margin:0 auto;padding:16px 16px calc(28px + env(safe-area-inset-bottom))}
+  h1{font-size:19px;margin:0;letter-spacing:-.3px}
+  .sub{color:var(--dim);font-size:12px;margin:2px 0 14px}
+  button{font-family:inherit;cursor:pointer}
+  .btn{width:100%;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:700}
+  .btn-main{background:var(--blue);color:#04293b}
+  .btn-ghost{background:var(--panel2);color:var(--txt);border:1px solid var(--line)}
+  .row{display:flex;gap:8px}
+  .mt8{margin-top:8px} .mt12{margin-top:12px} .mt16{margin-top:16px}
+  #prev{display:none;width:100%;max-height:150px;object-fit:contain;border-radius:10px;margin-top:10px;border:1px solid var(--line)}
+  .status{font-size:12px;color:var(--dim);min-height:16px;margin:10px 2px;text-align:center}
+  .status.work{color:var(--blue)} .status.bad{color:var(--bad)} .status.ok{color:var(--ok)}
+  /* entradas editables */
+  .inputs{display:flex;gap:8px;margin-top:4px}
+  .fld{flex:1;min-width:0}
+  .fld label{display:block;font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;margin:0 0 4px 2px}
+  .fld input{width:100%;box-sizing:border-box;background:var(--panel2);border:1px solid var(--line);
+    border-radius:10px;color:var(--txt);font-size:18px;font-weight:700;text-align:center;padding:12px 6px}
+  .fld input:focus{outline:none;border-color:var(--blue)}
+  /* tarjetas de criterio */
+  .cards{display:flex;gap:8px;margin-top:14px}
+  .card{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 8px;text-align:center;position:relative;overflow:hidden}
+  .card .lbl{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px}
+  .card .val{font-size:22px;font-weight:800;margin-top:4px;line-height:1.1}
+  .card .thr{font-size:10px;color:var(--dim);margin-top:3px}
+  .card.ok .val{color:var(--ok)} .card.warn .val{color:var(--warn)} .card.bad .val{color:var(--bad)} .card.na .val{color:var(--dim)}
+  .card .bar{position:absolute;left:0;bottom:0;height:3px;width:100%}
+  .card.ok .bar{background:var(--ok)} .card.warn .bar{background:var(--warn)} .card.bad .bar{background:var(--bad)} .card.na .bar{background:var(--line)}
+  /* veredicto */
+  .verdict{margin-top:16px;border-radius:16px;padding:18px;text-align:center;border:1px solid var(--line);background:var(--panel)}
+  .verdict .word{font-size:30px;font-weight:900;letter-spacing:-.5px}
+  .verdict .why{font-size:13px;color:var(--dim);margin-top:6px;min-height:16px}
+  .verdict.ok{background:rgba(74,222,128,.10);border-color:rgba(74,222,128,.4)} .verdict.ok .word{color:var(--ok)}
+  .verdict.warn{background:rgba(251,191,36,.10);border-color:rgba(251,191,36,.4)} .verdict.warn .word{color:var(--warn)}
+  .verdict.bad{background:rgba(248,113,113,.10);border-color:rgba(248,113,113,.4)} .verdict.bad .word{color:var(--bad)}
+  .verdict.na .word{color:var(--dim);font-size:18px;font-weight:700}
+  /* ajustes */
+  details{margin-top:18px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:4px 14px}
+  summary{cursor:pointer;padding:12px 0;font-size:14px;font-weight:700;list-style:none}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"⚙️";float:right}
+  .cfg-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid var(--line)}
+  .cfg-row label{font-size:13px;color:var(--txt)}
+  .cfg-row .u{font-size:11px;color:var(--dim)}
+  .cfg-row input{width:92px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;color:var(--txt);font-size:15px;text-align:center;padding:9px}
+  .foot{margin-top:18px;text-align:center;font-size:11px;color:var(--dim);line-height:1.5}
+  .foot b{color:var(--dim)}
+</style>
+</head>
+<body>
+
+  <h1>GigFast</h1>
+  <div class="sub">Captura la oferta y decide en segundos — $/milla · $/hora · $/orden</div>
+
+  <!-- Captura -->
+  <button class="btn btn-main" onclick="document.getElementById('file').click()" aria-label="Elegir captura">📸 Captura de la oferta</button>
+  <input type="file" id="file" accept="image/*" style="display:none" onchange="onFile(event)">
+  <button class="btn btn-ghost mt8" onclick="pasteShot()" aria-label="Pegar">📋 Pegar captura</button>
+  <img id="prev" alt="vista previa">
+  <div class="status" id="status"></div>
+
+  <!-- Datos (editables: corrige si el OCR falla) -->
+  <div class="inputs">
+    <div class="fld"><label>Pago $</label><input id="pay"   type="number" inputmode="decimal" placeholder="0" oninput="compute()"></div>
+    <div class="fld"><label>Millas</label><input id="miles" type="number" inputmode="decimal" placeholder="0" oninput="compute()"></div>
+    <div class="fld"><label>Minutos</label><input id="mins" type="number" inputmode="decimal" placeholder="0" oninput="compute()"></div>
+  </div>
+
+  <!-- Tres criterios de selección -->
+  <div class="cards">
+    <div class="card na" id="cMile"><div class="lbl">$ / milla</div><div class="val" id="vMile">—</div><div class="thr" id="tMile"></div><div class="bar"></div></div>
+    <div class="card na" id="cHour"><div class="lbl">$ / hora</div><div class="val" id="vHour">—</div><div class="thr" id="tHour"></div><div class="bar"></div></div>
+    <div class="card na" id="cOrder"><div class="lbl">$ / orden</div><div class="val" id="vOrder">—</div><div class="thr" id="tOrder"></div><div class="bar"></div></div>
+  </div>
+
+  <!-- Veredicto -->
+  <div class="verdict na" id="verdict">
+    <div class="word" id="vWord">Esperando datos</div>
+    <div class="why" id="vWhy">Carga una captura o escribe pago, millas y minutos.</div>
+  </div>
+
+  <!-- Ajustes (lo único que se guarda) -->
+  <details id="cfgBox">
+    <summary>Criterios de selección</summary>
+    <div class="cfg-row"><label>Mínimo $ / milla</label><input id="minMile" type="number" inputmode="decimal" onchange="onCfg()"></div>
+    <div class="cfg-row"><label>Mínimo $ / hora</label><input id="minHour" type="number" inputmode="decimal" onchange="onCfg()"></div>
+    <div class="cfg-row"><label>Mínimo $ / orden <span class="u">(pago total)</span></label><input id="minOrder" type="number" inputmode="decimal" onchange="onCfg()"></div>
+    <div class="cfg-row" style="border-top:1px solid var(--line)">
+      <span class="u">Se guardan solo estos umbrales, en este dispositivo.</span>
+      <button class="btn-ghost" style="width:auto;padding:8px 12px;border-radius:9px;font-size:12px" onclick="resetCfg()">Restablecer</button>
+    </div>
+  </details>
+
+  <div class="foot">
+    Todo ocurre en tu dispositivo: la imagen <b>no se sube a ningún servidor</b> y no se guardan registros ni estadísticas.<br>
+    GigFast · base para desarrollar — MIT.
+  </div>
+
+<script>
+/* ===================== GigFast =====================
+ * Núcleo: captura -> OCR -> 3 criterios ($/milla, $/hora, $/orden) con umbrales.
+ * Sin registros, sin estadísticas: solo persiste los umbrales (localStorage).
+ * La lógica de extracción OCR está portada del motor probado de GIG Intelligence.
+ * ==================================================== */
+
+const $ = id => document.getElementById(id);
+const num = id => { const v = parseFloat($(id).value); return isNaN(v) ? 0 : v; };
+
+/* ---------- Ajustes (único estado persistente) ---------- */
+const DEF = { minMile: 1.50, minHour: 18.00, minOrder: 5.00 };
+let cfg = loadCfg();
+function loadCfg(){
+  try { return Object.assign({}, DEF, JSON.parse(localStorage.getItem('gigfast_cfg') || '{}')); }
+  catch(e){ return Object.assign({}, DEF); }
+}
+function saveCfg(){ try { localStorage.setItem('gigfast_cfg', JSON.stringify(cfg)); } catch(e){} }
+function fillCfgInputs(){ $('minMile').value = cfg.minMile; $('minHour').value = cfg.minHour; $('minOrder').value = cfg.minOrder; }
+function onCfg(){
+  cfg.minMile  = parseFloat($('minMile').value)  || 0;
+  cfg.minHour  = parseFloat($('minHour').value)  || 0;
+  cfg.minOrder = parseFloat($('minOrder').value) || 0;
+  saveCfg(); compute();
+}
+function resetCfg(){ cfg = Object.assign({}, DEF); saveCfg(); fillCfgInputs(); compute(); }
+
+/* ---------- Extracción OCR (portada de GIG Intelligence) ---------- */
+/* EXTRACT-START */
+// "mi" tal como lo lee el OCR: mi, mí, rni, ml
+const MI = '(?:mi|mí|rni|ml)\\b|miles?\\b|millas?\\b';
+
+function extractPay(text){
+  const dec = x => parseFloat(String(x).replace(',', '.'));
+  const units = /^(mi|mí|rni|mil|mile|miles|km|min|mins|hr|hrs|h|m|stops?)$/;
+  // capa 0: número cerca de "incl. tip(s)" / "Guaranteed" (lo más fiable en DoorDash/Uber)
+  let L = [...text.matchAll(/(\d{1,3}[.,]\d{2})[^\d]{0,30}?(?:incl|guarant)/gi)].map(m => dec(m[1]));
+  // capa 1: símbolo $ + dos decimales
+  if(!L.length) L = [...text.matchAll(/\$\s?(\d{1,3}[.,]\d{2})\b/g)].map(m => dec(m[1]));
+  // capa 2: símbolo mal leído por el OCR (S, §, 5, £) + dos decimales
+  if(!L.length) L = [...text.matchAll(/(?:^|[\s\n])[S§s5£]\s?(\d{1,3}[.,]\d{2})\b/g)].map(m => dec(m[1]));
+  // capa 3: número suelto con dos decimales, descartando millas/minutos/rating y fuera de rango
+  if(!L.length) L = [...text.matchAll(/(?:^|[\s\n])(\d{1,3}[.,]\d{2})(?![\d])\s*([★⭐]|[a-zA-Z]{0,6})/g)]
+    .filter(m => {
+      const u = (m[2] || '').toLowerCase();
+      if(units.test(u) || /[★⭐]/.test(u)) return false;   // unidad o estrella pegada al número
+      const v = dec(m[1]);
+      return v >= 2 && v <= 150;
+    }).map(m => dec(m[1]));
+  // capa 4: $ con número entero ("$7")
+  if(!L.length) L = [...text.matchAll(/\$\s?(\d{1,3})(?![\d.,])/g)].map(m => +m[1]).filter(v => v >= 2 && v <= 150);
+  return L.length ? Math.max(...L) : null;
+}
+
+function extractMiles(text){
+  // 1) entre paréntesis: "(2.7 mi)" — formato de Uber y DoorDash
+  const paren = [...text.matchAll(new RegExp('\\((\\d{1,3}(?:[.,]\\d{1,2})?)\\s*(?:' + MI + ')\\s*\\)', 'gi'))]
+    .map(m => parseFloat(m[1].replace(',', '.')));
+  if(paren.length) return Math.max(...paren);
+  // 2) rango "4.3 mi - 13.7 mi" -> el mayor
+  const range = text.match(new RegExp('(\\d{1,3}(?:\\.\\d{1,2})?)\\s*(?:' + MI + ')\\s*[-–]\\s*(\\d{1,3}(?:\\.\\d{1,2})?)\\s*(?:' + MI + ')', 'i'));
+  if(range) return Math.max(parseFloat(range[1]), parseFloat(range[2]));
+  // 3) cualquier "X mi" -> el mayor (el total suele ser el mayor)
+  const list = [...text.matchAll(new RegExp('(\\d{1,3}(?:\\.\\d{1,2})?)\\s*(?:' + MI + ')', 'gi'))]
+    .map(m => parseFloat(m[1])).filter(v => v > 0 && v < 200);
+  return list.length ? Math.max(...list) : null;
+}
+
+function extractMinutes(text){
+  let m;
+  // 1) "1 hr 14 min" / "1hr14min"
+  m = text.match(/(\d{1,2})\s*h(?:r|rs|our|ours)?\s*(\d{1,2})\s*m(?:in)?/i);
+  if(m) return (+m[1]) * 60 + (+m[2]);
+  // 2) "1 hr" sola (sin minutos)
+  m = text.match(/(\d{1,2})\s*(?:hr|hrs|hour|hours)\b/i);
+  if(m) return (+m[1]) * 60;
+  // 3) el tiempo marcado como total: "15 min (2.7 mi) total"
+  m = text.match(/(\d{1,3})\s*min[^\n]{0,20}total/i);
+  if(m) return +m[1];
+  // 4) rangos "25-35 min" y valores sueltos "34 min" -> el mayor
+  //    (en Uber/DoorDash el primero suele ser el tiempo al restaurante, no el total)
+  const vals = [];
+  for(const r of text.matchAll(/(\d{1,3})\s*[-–]\s*(\d{1,3})\s*min/gi)) vals.push(+r[1], +r[2]);
+  for(const r of text.matchAll(/(\d{1,3})\s*min/gi)) vals.push(+r[1]);
+  const ok = vals.filter(v => v > 0 && v <= 300);
+  return ok.length ? Math.max(...ok) : null;
+}
+/* EXTRACT-END */
+
+function parseText(text){
+  const pay = extractPay(text), miles = extractMiles(text), mins = extractMinutes(text);
+  if(pay  != null) $('pay').value   = pay.toFixed(2);
+  if(miles!= null) $('miles').value = miles;
+  if(mins != null) $('mins').value  = mins;
+  const got = [pay!=null?'pago':null, miles!=null?'millas':null, mins!=null?'minutos':null].filter(Boolean);
+  const st = $('status');
+  if(got.length === 3){ st.className = 'status ok'; st.textContent = '✓ Leí pago, millas y minutos. Revisa y ajusta si hace falta.'; }
+  else if(got.length){ st.className = 'status work'; st.textContent = '⚠️ Leí ' + got.join(' y ') + '. Completa el resto a mano.'; }
+  else { st.className = 'status bad'; st.textContent = 'No reconocí los datos. Escríbelos a mano abajo.'; }
+  compute();
+  return got.length;
+}
+
+/* ---------- Preprocesado: recorta la tarjeta de la oferta y normaliza contraste ----------
+ * En Uber y DoorDash la oferta ocupa la mitad inferior; el mapa de arriba solo mete ruido
+ * (números de carreteras, direcciones). Gris + invertir si es tema oscuro = texto oscuro
+ * sobre fondo claro, que es lo que mejor lee Tesseract. */
+async function preprocess(blob){
+  const bmp = await createImageBitmap(blob);
+  const top = Math.floor(bmp.height * 0.45), h = bmp.height - top;
+  const c = document.createElement('canvas');
+  c.width = bmp.width; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(bmp, 0, top, bmp.width, h, 0, 0, bmp.width, h);
+  const img = ctx.getImageData(0, 0, c.width, h), d = img.data;
+  let sum = 0;
+  for(let i = 0; i < d.length; i += 4){
+    const g = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
+    d[i] = d[i+1] = d[i+2] = g; sum += g;
+  }
+  if(sum / (d.length / 4) < 128){ for(let i = 0; i < d.length; i += 4){ d[i] = d[i+1] = d[i+2] = 255 - d[i]; } }
+  ctx.putImageData(img, 0, 0);
+  return c;
+}
+
+/* ---------- OCR (worker reutilizable) ---------- */
+let _worker = null;
+function getWorker(){
+  if(!_worker){
+    _worker = Tesseract.createWorker('eng', 1, {
+      logger: m => { if(m.status === 'recognizing text'){ const s=$('status'); s.className='status work'; s.textContent='🔍 Leyendo… ' + Math.round((m.progress||0)*100) + '%'; } }
+    }).catch(e => { _worker = null; throw e; });
+  }
+  return _worker;
+}
+async function runOCR(blob){
+  const st = $('status');
+  if(typeof Tesseract === 'undefined'){ st.className='status bad'; st.textContent='El lector no cargó (necesita internet la 1ª vez).'; return; }
+  st.className='status work'; st.textContent='🔍 Preparando lector…';
+  try {
+    const w = await getWorker();
+    st.textContent = '🔍 Leyendo imagen…';
+    let src = blob;
+    try { src = await preprocess(blob); } catch(e){ src = blob; }
+    let r = await w.recognize(src);
+    let text = (r && r.data && r.data.text) ? r.data.text : '';
+    // si el recorte no bastó, segunda pasada con la imagen completa
+    if(src !== blob && (!text.trim() || extractPay(text) == null)){
+      r = await w.recognize(blob);
+      text += '\n' + ((r && r.data && r.data.text) ? r.data.text : '');
+    }
+    if(!text.trim()){ st.className='status bad'; st.textContent='No encontré texto. Usa una imagen más nítida o escribe a mano.'; return; }
+    parseText(text);
+  } catch(e){ st.className='status bad'; st.textContent='No pude procesar la imagen.'; _worker = null; }
+}
+function onFile(ev){
+  const f = ev.target.files && ev.target.files[0];
+  if(!f){ return; }
+  try { const u = URL.createObjectURL(f); const p = $('prev'); p.src = u; p.style.display = 'block'; } catch(e){}
+  runOCR(f);
+  ev.target.value = '';
+}
+async function pasteShot(){
+  const st = $('status');
+  try {
+    if(!navigator.clipboard || !navigator.clipboard.read){ st.className='status bad'; st.textContent='Tu navegador no permite pegar imágenes. Usa 📸 Captura.'; return; }
+    const items = await navigator.clipboard.read();
+    for(const it of items){
+      const t = it.types.find(x => x.startsWith('image/'));
+      if(t){
+        const blob = await it.getType(t);
+        try { const u = URL.createObjectURL(blob); const p = $('prev'); p.src = u; p.style.display = 'block'; } catch(e){}
+        runOCR(blob); return;
+      }
+    }
+    st.className='status bad'; st.textContent='No hay imagen en el portapapeles. Copia la captura primero.';
+  } catch(e){ st.className='status bad'; st.textContent='No pude leer el portapapeles (permiso denegado).'; }
+}
+
+/* ---------- Cálculo y veredicto ---------- */
+function stateOf(val, thr){
+  if(val == null) return 'na';
+  if(thr <= 0)    return 'ok';
+  if(val >= thr)  return 'ok';
+  if(val >= thr * 0.9) return 'warn';
+  return 'bad';
+}
+function paintCard(cardId, valId, thrId, val, thr, suffix){
+  const card = $(cardId), s = stateOf(val, thr);
+  card.className = 'card ' + s;
+  $(valId).textContent = (val == null) ? '—' : ('$' + val.toFixed(2) + (suffix || ''));
+  $(thrId).textContent = 'min $' + (+thr).toFixed(2);
+}
+function compute(){
+  const pay = num('pay'), miles = num('miles'), mins = num('mins');
+  const perMile  = miles > 0 ? pay / miles : null;
+  const perHour  = mins  > 0 ? pay / (mins / 60) : null;
+  const perOrder = pay   > 0 ? pay : null;
+
+  paintCard('cMile','vMile','tMile', perMile,  cfg.minMile,  '');
+  paintCard('cHour','vHour','tHour', perHour,  cfg.minHour,  '');
+  paintCard('cOrder','vOrder','tOrder', perOrder, cfg.minOrder, '');
+
+  const v = $('verdict'), w = $('vWord'), why = $('vWhy');
+  if(perMile == null || perHour == null || perOrder == null){
+    v.className = 'verdict na'; w.textContent = 'Esperando datos';
+    why.textContent = 'Completa pago, millas y minutos.';
+    return;
+  }
+  const items = [
+    { s: stateOf(perMile,  cfg.minMile),  name: '$/milla', val: perMile,  thr: cfg.minMile },
+    { s: stateOf(perHour,  cfg.minHour),  name: '$/hora',  val: perHour,  thr: cfg.minHour },
+    { s: stateOf(perOrder, cfg.minOrder), name: '$/orden', val: perOrder, thr: cfg.minOrder }
+  ];
+  const bad  = items.filter(i => i.s === 'bad');
+  const warn = items.filter(i => i.s === 'warn');
+  if(bad.length){
+    v.className = 'verdict bad'; w.textContent = 'RECHAZAR';
+    why.textContent = 'No llega en: ' + bad.map(i => i.name + ' $' + i.val.toFixed(2) + ' < $' + i.thr.toFixed(2)).join(' · ');
+  } else if(warn.length){
+    v.className = 'verdict warn'; w.textContent = 'REGULAR';
+    why.textContent = 'Justo en el límite: ' + warn.map(i => i.name).join(' · ') + '. Tú decides.';
+  } else {
+    v.className = 'verdict ok'; w.textContent = 'ACEPTAR';
+    why.textContent = 'Cumple los tres criterios.';
+  }
+}
+
+/* ---------- Arranque ---------- */
+fillCfgInputs();
+compute();
+</script>
+</body>
+</html>
