@@ -68,6 +68,19 @@
   .cfg-row label{font-size:13px;color:var(--txt)}
   .cfg-row .u{font-size:11px;color:var(--dim)}
   .cfg-row input{width:92px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;color:var(--txt);font-size:15px;text-align:center;padding:9px}
+  /* alertas: orden doble · paquete · ID */
+  .flags{display:flex;gap:8px;margin-top:12px}
+  .flag{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;color:var(--dim);font-size:11px;font-weight:700;line-height:1.2;text-align:center}
+  .flag svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;opacity:.55}
+  .flag.on{background:rgba(251,191,36,.14);border-color:var(--warn);color:var(--warn)}
+  .flag.on svg{opacity:1}
+  .flag.on.id{background:rgba(248,113,113,.14);border-color:var(--bad);color:var(--bad)}
+  .flag.pulse{animation:pulse .5s ease-in-out 3}
+  @keyframes pulse{50%{transform:scale(1.06)}}
+  .flag small{font-weight:500;font-size:10px;opacity:.9}
+  .verdict .alert{display:none;margin-top:10px;font-size:13px;font-weight:700;color:var(--warn)}
+  .verdict .alert.on{display:block}
   .foot{margin-top:18px;text-align:center;font-size:11px;color:var(--dim);line-height:1.5}
   .foot b{color:var(--dim)}
 </style>
@@ -78,7 +91,7 @@
   <div class="sub">Captura la oferta y decide en segundos — $/milla · $/hora · $/orden</div>
 
   <!-- Captura -->
-  <button class="btn btn-main" onclick="document.getElementById('file').click()" aria-label="Elegir captura">📸 Captura de la oferta</button>
+  <button class="btn btn-main" onclick="unlockAudio();document.getElementById('file').click()" aria-label="Elegir captura">📸 Captura de la oferta</button>
   <input type="file" id="file" accept="image/*" style="display:none" onchange="onFile(event)">
   <button class="btn btn-ghost mt8" onclick="pasteShot()" aria-label="Pegar">📋 Pegar captura</button>
   <img id="prev" alt="vista previa">
@@ -89,6 +102,22 @@
     <div class="fld"><label>Pago $</label><input id="pay"   type="number" inputmode="decimal" placeholder="0" oninput="compute()"></div>
     <div class="fld"><label>Millas</label><input id="miles" type="number" inputmode="decimal" placeholder="0" oninput="compute()"></div>
     <div class="fld"><label>Minutos</label><input id="mins" type="number" inputmode="decimal" placeholder="0" oninput="compute()"></div>
+  </div>
+
+  <!-- Alertas (detectadas por OCR; toca para marcar/desmarcar a mano) -->
+  <div class="flags">
+    <button class="flag" id="fDouble" onclick="toggleFlag('double')" aria-pressed="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="12" height="12" rx="2"></rect><path d="M9 7V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-4"></path></svg>
+      <span id="fDoubleTxt">Orden doble</span>
+    </button>
+    <button class="flag" id="fPkg" onclick="toggleFlag('pkg')" aria-pressed="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5z"></path><path d="m3 8 9 5 9-5"></path><path d="M12 13v8"></path></svg>
+      <span>Paquete</span>
+    </button>
+    <button class="flag id" id="fId" onclick="toggleFlag('id')" aria-pressed="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"></rect><circle cx="8" cy="12" r="2.5"></circle><path d="M14 10h5M14 14h3"></path></svg>
+      <span>Requiere ID</span><small id="fIdTxt"></small>
+    </button>
   </div>
 
   <!-- Tres criterios de selección -->
@@ -102,6 +131,7 @@
   <div class="verdict na" id="verdict">
     <div class="word" id="vWord">Esperando datos</div>
     <div class="why" id="vWhy">Carga una captura o escribe pago, millas y minutos.</div>
+    <div class="alert" id="vAlert"></div>
   </div>
 
   <!-- Ajustes (lo único que se guarda) -->
@@ -109,7 +139,14 @@
     <summary>Criterios de selección</summary>
     <div class="cfg-row"><label>Mínimo $ / milla</label><input id="minMile" type="number" inputmode="decimal" onchange="onCfg()"></div>
     <div class="cfg-row"><label>Mínimo $ / hora</label><input id="minHour" type="number" inputmode="decimal" onchange="onCfg()"></div>
-    <div class="cfg-row"><label>Mínimo $ / orden <span class="u">(pago total)</span></label><input id="minOrder" type="number" inputmode="decimal" onchange="onCfg()"></div>
+    <div class="cfg-row"><label>Mínimo $ / orden <span class="u">(orden sencilla)</span></label><input id="minOrder" type="number" inputmode="decimal" onchange="onCfg()"></div>
+    <div class="cfg-row"><label>Mínimo $ / orden en doble <span class="u">(pago ÷ órdenes)</span></label><input id="minOrderDouble" type="number" inputmode="decimal" onchange="onCfg()"></div>
+    <div class="cfg-row"><label for="sound">Sonido de alerta <span class="u">(doble · paquete · ID)</span></label>
+      <span style="display:flex;gap:8px;align-items:center">
+        <button class="btn-ghost" style="width:auto;padding:8px 10px;border-radius:9px;font-size:12px" onclick="unlockAudio();warnSound(true)">Probar</button>
+        <input id="sound" type="checkbox" style="width:22px;height:22px" onchange="onCfg()">
+      </span>
+    </div>
     <div class="cfg-row" style="border-top:1px solid var(--line)">
       <span class="u">Se guardan solo estos umbrales, en este dispositivo.</span>
       <button class="btn-ghost" style="width:auto;padding:8px 12px;border-radius:9px;font-size:12px" onclick="resetCfg()">Restablecer</button>
@@ -132,18 +169,20 @@ const $ = id => document.getElementById(id);
 const num = id => { const v = parseFloat($(id).value); return isNaN(v) ? 0 : v; };
 
 /* ---------- Ajustes (único estado persistente) ---------- */
-const DEF = { minMile: 1.50, minHour: 18.00, minOrder: 5.00 };
+const DEF = { minMile: 1.50, minHour: 18.00, minOrder: 5.00, minOrderDouble: 4.00, sound: true };
 let cfg = loadCfg();
 function loadCfg(){
   try { return Object.assign({}, DEF, JSON.parse(localStorage.getItem('gigfast_cfg') || '{}')); }
   catch(e){ return Object.assign({}, DEF); }
 }
 function saveCfg(){ try { localStorage.setItem('gigfast_cfg', JSON.stringify(cfg)); } catch(e){} }
-function fillCfgInputs(){ $('minMile').value = cfg.minMile; $('minHour').value = cfg.minHour; $('minOrder').value = cfg.minOrder; }
+function fillCfgInputs(){ $('minMile').value = cfg.minMile; $('minHour').value = cfg.minHour; $('minOrder').value = cfg.minOrder; $('minOrderDouble').value = cfg.minOrderDouble; $('sound').checked = !!cfg.sound; }
 function onCfg(){
   cfg.minMile  = parseFloat($('minMile').value)  || 0;
   cfg.minHour  = parseFloat($('minHour').value)  || 0;
   cfg.minOrder = parseFloat($('minOrder').value) || 0;
+  cfg.minOrderDouble = parseFloat($('minOrderDouble').value) || 0;
+  cfg.sound    = $('sound').checked;
   saveCfg(); compute();
 }
 function resetCfg(){ cfg = Object.assign({}, DEF); saveCfg(); fillCfgInputs(); compute(); }
@@ -208,9 +247,82 @@ function extractMinutes(text){
   const ok = vals.filter(v => v > 0 && v <= 300);
   return ok.length ? Math.max(...ok) : null;
 }
+/* ---------- Alertas: orden doble · paquete (Uber Connect) · requiere ID ---------- */
+const N_WORD = { two:2, dos:2, three:3, tres:3 };
+const ORDER_NOUN = '(?:orders?|deliveries|entregas|pedidos|drop-?offs|pickups|recogidas)';
+function detectFlags(text){
+  const t = String(text).replace(/\s+/g, ' ');
+  // --- orden doble / múltiple: cuántas órdenes ---
+  let orders = 1, m;
+  for(const r of t.matchAll(new RegExp('\\b([2-5])\\s*' + ORDER_NOUN + '\\b', 'gi'))) orders = Math.max(orders, +r[1]);
+  for(const r of t.matchAll(new RegExp('\\b(two|three|dos|tres)\\s+' + ORDER_NOUN + '\\b', 'gi'))) orders = Math.max(orders, N_WORD[r[1].toLowerCase()]);
+  // "Delivery (2)" / "Delivery x2" / "Orders x2"
+  m = t.match(/\b(?:delivery|deliveries|orders?|entregas?|pedidos?)\s*(?:\(\s*x?\s?([2-5])\s*\)|x\s?([2-5]))(?![\d.,])/i);
+  if(m) orders = Math.max(orders, +(m[1] || m[2]));
+  // DoorDash: una orden normal = "2 stops" (recoger + entregar); 3+ paradas = varias órdenes
+  m = t.match(/\b([3-9])\s*stops\b/i);
+  if(m) orders = Math.max(orders, Math.ceil(+m[1] / 2));
+  if(/\b(batched|stacked|add-?on|double order|orden doble|pedido doble)\b/i.test(t)) orders = Math.max(orders, 2);
+  // --- paquete / Uber Connect ---
+  const pkg = /\b(uber\s*connect|connect|packages?|paquetes?|parcels?|courier)\b/i.test(t);
+  // --- artículos restringidos que piden verificar identidad ---
+  const ID_RULES = [
+    ['ID',        /\b(?:id\s*(?:check|required|verification|scan)|verify\s*(?:id|age)|age\s*verification|scan\s*id|verificar\s*(?:id|edad)|identificaci[oó]n)\b|(?:^|\s)21\s?\+|\+\s?21\b/i],
+    ['Alcohol',   /\b(?:alcohol|liquors?|licor(?:es)?|beers?|cervezas?|wines?|vinos?|spirits|tequila|vodka|whiske?y)\b/i],
+    ['Tabaco',    /\b(?:tobacco|tabaco|cigarettes?|cigarrillos?|vapes?)\b/i],
+    ['Medicinas', /\b(?:pharmacy|farmacia|prescriptions?|receta|medicines?|medicinas?|medications?|cvs|walgreens)\b/i]
+  ];
+  const idWhy = ID_RULES.filter(([, re]) => re.test(t)).map(([name]) => name);
+  return { orders, double: orders > 1, pkg, id: idWhy.length > 0, idWhy };
+}
 /* EXTRACT-END */
 
+/* ---------- Estado de alertas + sonido ---------- */
+let flags = { double:false, orders:1, pkg:false, id:false, idWhy:[] };
+function paintFlags(pulse){
+  const set = (id, on) => { const b = $(id); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on);
+    b.classList.remove('pulse'); if(on && pulse){ void b.offsetWidth; b.classList.add('pulse'); } };
+  set('fDouble', flags.double); set('fPkg', flags.pkg); set('fId', flags.id);
+  $('fDoubleTxt').textContent = flags.double && flags.orders > 2 ? ('Orden x' + flags.orders) : 'Orden doble';
+  $('fIdTxt').textContent = flags.id ? flags.idWhy.join(' · ') : '';
+}
+function toggleFlag(k){
+  flags[k] = !flags[k];
+  if(k === 'double') flags.orders = flags.double ? Math.max(2, flags.orders) : 1;
+  if(k === 'id' && !flags.id) flags.idWhy = [];
+  paintFlags(false); compute();
+}
+// Web Audio: sin archivos. iOS exige desbloquearlo con un toque (lo hacen los botones de captura).
+let actx = null;
+function unlockAudio(){
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    if(actx.state === 'suspended') actx.resume();
+    const b = actx.createBuffer(1, 1, 22050), s = actx.createBufferSource(); s.buffer = b; s.connect(actx.destination); s.start(0);
+  } catch(e){}
+}
+function warnSound(force){
+  if(!cfg.sound && !force) return;
+  try {
+    unlockAudio();
+    const t0 = actx.currentTime + 0.02;
+    [[0, 880], [0.2, 660], [0.4, 880], [0.6, 660]].forEach(([d, f]) => {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = 'square'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t0 + d);
+      g.gain.exponentialRampToValueAtTime(0.3, t0 + d + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + 0.17);
+      o.connect(g); g.connect(actx.destination); o.start(t0 + d); o.stop(t0 + d + 0.19);
+    });
+  } catch(e){}
+  try { if(navigator.vibrate) navigator.vibrate([150, 80, 150, 80, 150]); } catch(e){}
+}
+
 function parseText(text){
+  const f = detectFlags(text);
+  flags = { double: f.double, orders: f.orders, pkg: f.pkg, id: f.id, idWhy: f.idWhy };
+  paintFlags(true);
+  if(f.double || f.pkg || f.id) warnSound();
   const pay = extractPay(text), miles = extractMiles(text), mins = extractMinutes(text);
   if(pay  != null) $('pay').value   = pay.toFixed(2);
   if(miles!= null) $('miles').value = miles;
@@ -284,6 +396,7 @@ function onFile(ev){
   ev.target.value = '';
 }
 async function pasteShot(){
+  unlockAudio();
   const st = $('status');
   try {
     if(!navigator.clipboard || !navigator.clipboard.read){ st.className='status bad'; st.textContent='Tu navegador no permite pegar imágenes. Usa 📸 Captura.'; return; }
@@ -318,13 +431,23 @@ function compute(){
   const pay = num('pay'), miles = num('miles'), mins = num('mins');
   const perMile  = miles > 0 ? pay / miles : null;
   const perHour  = mins  > 0 ? pay / (mins / 60) : null;
-  const perOrder = pay   > 0 ? pay : null;
+  // orden doble: el pago se reparte entre las órdenes
+  const nOrd = flags.double ? Math.max(2, flags.orders) : 1;
+  const perOrder = pay   > 0 ? pay / nOrd : null;
 
   paintCard('cMile','vMile','tMile', perMile,  cfg.minMile,  '');
   paintCard('cHour','vHour','tHour', perHour,  cfg.minHour,  '');
-  paintCard('cOrder','vOrder','tOrder', perOrder, cfg.minOrder, '');
+  const thrOrder = nOrd > 1 ? cfg.minOrderDouble : cfg.minOrder;
+  paintCard('cOrder','vOrder','tOrder', perOrder, thrOrder, '');
+  if(nOrd > 1) $('tOrder').textContent += ' · ÷' + nOrd;
 
-  const v = $('verdict'), w = $('vWord'), why = $('vWhy');
+  const v = $('verdict'), w = $('vWord'), why = $('vWhy'), al = $('vAlert');
+  const warns = [];
+  if(flags.double) warns.push(nOrd > 2 ? (nOrd + ' órdenes') : 'Orden doble');
+  if(flags.pkg)    warns.push('Paquete');
+  if(flags.id)     warns.push('Requiere ID' + (flags.idWhy.length ? ' (' + flags.idWhy.join(', ') + ')' : ''));
+  al.className = 'alert' + (warns.length ? ' on' : '');
+  al.textContent = warns.length ? '⚠️ Antes de aceptar: ' + warns.join(' · ') : '';
   if(perMile == null || perHour == null || perOrder == null){
     v.className = 'verdict na'; w.textContent = 'Esperando datos';
     why.textContent = 'Completa pago, millas y minutos.';
@@ -333,7 +456,7 @@ function compute(){
   const items = [
     { s: stateOf(perMile,  cfg.minMile),  name: '$/milla', val: perMile,  thr: cfg.minMile },
     { s: stateOf(perHour,  cfg.minHour),  name: '$/hora',  val: perHour,  thr: cfg.minHour },
-    { s: stateOf(perOrder, cfg.minOrder), name: '$/orden', val: perOrder, thr: cfg.minOrder }
+    { s: stateOf(perOrder, thrOrder), name: nOrd > 1 ? '$/orden (÷' + nOrd + ')' : '$/orden', val: perOrder, thr: thrOrder }
   ];
   const bad  = items.filter(i => i.s === 'bad');
   const warn = items.filter(i => i.s === 'warn');
